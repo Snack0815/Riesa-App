@@ -9,5 +9,5 @@
  * gewährt selbst KEINEN Zugriff, sondern nur zusammen mit einer gültigen
  * Login-Session (siehe supabase/migrations/0001_init.sql, Row Level Security).
  */
-const SUPABASE_URL = '';
-const SUPABASE_ANON_KEY = '';
+const SUPABASE_URL = 'https://jxeslmyfikqxqlzltpag.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_TFkOtGXhJAMqq4rtydo2Aw_-dHnhBi5';
