@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>Riesa Fahrten</title>
+<meta name="description" content="Faire Fahrtenaufteilung für zwei Personen nach Riesa.">
+<meta name="theme-color" content="#12141a">
+
+<!-- iOS PWA -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Riesa Fahrten">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+
+<link rel="icon" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- Onboarding -->
+  <section id="onboarding" class="screen hidden">
+    <div class="onboard-wrap">
+      <div class="onboard-header">
+        <div class="app-logo">🚗</div>
+        <h1>Riesa Fahrten</h1>
+        <p class="muted">Richte kurz eure beiden Personen &amp; Autos ein.</p>
+      </div>
+
+      <form id="onboardForm" class="onboard-form">
+        <div class="onboard-person">
+          <h2><span class="badge badge-1">1</span> Person 1</h2>
+          <label>Name
+            <input type="text" name="p1name" value="Person 1" required maxlength="20">
+          </label>
+          <div class="grid-2">
+            <label>Marke
+              <input type="text" name="p1brand" value="BMW" required maxlength="20">
+            </label>
+            <label>Modell
+              <input type="text" name="p1model" value="320d" required maxlength="20">
+            </label>
+          </div>
+          <div class="grid-2">
+            <label>Baujahr <span class="opt">optional</span>
+              <input type="number" name="p1year" value="2019" min="1970" max="2030">
+            </label>
+            <label>Farbe <span class="opt">optional</span>
+              <select name="p1color">
+                <option>Schwarz</option>
+                <option>Weiß</option>
+                <option>Silber</option>
+                <option>Grau</option>
+                <option>Blau</option>
+                <option>Dunkelblau</option>
+                <option>Rot</option>
+                <option>Grün</option>
+                <option>Gelb</option>
+                <option>Orange</option>
+                <option>Braun</option>
+                <option>Beige</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="onboard-person">
+          <h2><span class="badge badge-2">2</span> Person 2</h2>
+          <label>Name
+            <input type="text" name="p2name" value="Person 2" required maxlength="20">
+          </label>
+          <div class="grid-2">
+            <label>Marke
+              <input type="text" name="p2brand" value="VW" required maxlength="20">
+            </label>
+            <label>Modell
+              <input type="text" name="p2model" value="Golf 8" required maxlength="20">
+            </label>
+          </div>
+          <div class="grid-2">
+            <label>Baujahr <span class="opt">optional</span>
+              <input type="number" name="p2year" value="2021" min="1970" max="2030">
+            </label>
+            <label>Farbe <span class="opt">optional</span>
+              <select name="p2color">
+                <option>Blau</option>
+                <option>Schwarz</option>
+                <option>Weiß</option>
+                <option>Silber</option>
+                <option>Grau</option>
+                <option>Dunkelblau</option>
+                <option>Rot</option>
+                <option>Grün</option>
+                <option>Gelb</option>
+                <option>Orange</option>
+                <option>Braun</option>
+                <option>Beige</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <label class="checkbox-row">
+          <input type="checkbox" name="seed" checked>
+          Mit Beispiel-Fahrten starten (10 / 8)
+        </label>
+
+        <button type="submit" class="btn-primary btn-block">Los geht's</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- Main app -->
+  <div id="mainApp" class="screen hidden">
+    <header class="topbar">
+      <h1>Riesa Fahrten</h1>
+    </header>
+
+    <main id="views">
+      <section id="view-dashboard" class="view"></section>
+      <section id="view-trips" class="view"></section>
+      <section id="view-cars" class="view"></section>
+      <section id="view-settings" class="view"></section>
+    </main>
+
+    <nav class="bottomnav">
+      <button class="navbtn" data-view="dashboard">
+        <span class="navicon">🏠</span><span>Übersicht</span>
+      </button>
+      <button class="navbtn" data-view="trips">
+        <span class="navicon">🚗</span><span>Fahrten</span>
+      </button>
+      <button class="navbtn" data-view="cars">
+        <span class="navicon">🚘</span><span>Autos</span>
+      </button>
+      <button class="navbtn" data-view="settings">
+        <span class="navicon">⚙️</span><span>Einstellungen</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Modal / Sheet root -->
+  <div id="sheetRoot"></div>
+
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/cars.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
