@@ -21,6 +21,48 @@
 
 <div id="app">
 
+  <!-- Setup nötig (Supabase-Zugangsdaten fehlen) -->
+  <section id="setupNeeded" class="screen hidden">
+    <div class="onboard-wrap">
+      <div class="onboard-header">
+        <div class="app-logo">⚙️</div>
+        <h1>Einrichtung nötig</h1>
+        <p class="muted">Die Supabase-Zugangsdaten fehlen noch. Trage <code>SUPABASE_URL</code> und <code>SUPABASE_ANON_KEY</code> in <code>js/config.js</code> ein und lade die Seite neu.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Ladezustand -->
+  <section id="loading" class="screen hidden">
+    <div class="loading-wrap">
+      <div class="spinner"></div>
+      <p class="muted">Lade Daten…</p>
+    </div>
+  </section>
+
+  <!-- Login (gemeinsamer Zugang) -->
+  <section id="login" class="screen hidden">
+    <div class="onboard-wrap">
+      <div class="onboard-header">
+        <div class="app-logo">🔒</div>
+        <h1>Riesa Fahrten</h1>
+        <p class="muted">Meldet euch mit dem gemeinsamen Zugang an.</p>
+      </div>
+      <form id="loginForm" class="onboard-form">
+        <div class="onboard-person">
+          <label>E-Mail
+            <input type="email" name="email" required autocomplete="username" inputmode="email">
+          </label>
+          <label>Passwort
+            <input type="password" name="password" required autocomplete="current-password">
+          </label>
+          <div id="loginError" class="form-error hidden"></div>
+          <button type="submit" class="btn-primary btn-block">Anmelden</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
   <!-- Onboarding -->
   <section id="onboarding" class="screen hidden">
     <div class="onboard-wrap">
@@ -147,6 +189,9 @@
 
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="js/config.js"></script>
+<script src="js/supabaseClient.js"></script>
 <script src="js/db.js"></script>
 <script src="js/cars.js"></script>
 <script src="js/app.js"></script>

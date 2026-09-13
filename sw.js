@@ -1,9 +1,11 @@
-const CACHE_NAME = 'riesa-fahrten-v1';
+const CACHE_NAME = 'riesa-fahrten-v3';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './css/styles.css',
+  './js/config.js',
+  './js/supabaseClient.js',
   './js/db.js',
   './js/cars.js',
   './js/app.js',
@@ -28,6 +30,13 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  // Nur das eigene App-Shell (HTML/CSS/JS/Icons) cachen. API-Aufrufe an
+  // Supabase (oder jeden anderen Fremd-Origin) dürfen NIE aus dem Cache
+  // beantwortet werden - sonst sieht die App dauerhaft veraltete Daten
+  // statt frischer Personen/Fahrten vom Server.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const network = fetch(event.request)

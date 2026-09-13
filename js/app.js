@@ -1,6 +1,7 @@
 /* Riesa Fahrten – App-Logik */
-let DATA = loadData();
+let DATA = { people: [], trips: [] };
 let currentView = 'dashboard';
+let currentUserEmail = '';
 
 const $ = (sel, root) => (root || document).querySelector(sel);
 const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
@@ -38,34 +39,143 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-/* ---------------- Init / Onboarding ---------------- */
+/* ---------------- Init / Auth / Onboarding ---------------- */
 
-function init() {
-  if (!DATA.onboarded || DATA.people.length < 2) {
+function hideAllScreens() {
+  ['onboarding', 'mainApp', 'login', 'loading', 'setupNeeded'].forEach(id => $('#' + id).classList.add('hidden'));
+}
+
+function isSheetOpen() {
+  return $('#sheetRoot').children.length > 0;
+}
+
+async function init() {
+  registerServiceWorker();
+
+  if (!isSupabaseConfigured()) {
+    showSetupNeeded();
+    return;
+  }
+
+  DATA = loadCache();
+
+  let session;
+  try {
+    session = await getSession();
+  } catch (e) {
+    session = null;
+  }
+
+  if (!session) {
+    showLogin();
+    return;
+  }
+
+  currentUserEmail = session.user.email || '';
+  await afterLogin();
+}
+
+let globalListenersRegistered = false;
+function setupGlobalListeners() {
+  if (globalListenersRegistered) return;
+  globalListenersRegistered = true;
+
+  onAuthChange((s) => {
+    if (!s) {
+      currentUserEmail = '';
+      showLogin();
+    }
+  });
+
+  window.addEventListener('online', () => {
+    showToast('Wieder online – synchronisiere…');
+    flushQueue();
+  });
+  window.addEventListener('offline', () => {
+    showToast('Offline – Änderungen werden später synchronisiert');
+  });
+}
+
+async function afterLogin() {
+  setupGlobalListeners();
+  showLoading();
+  try {
+    DATA = await fetchAll();
+    saveCache(DATA);
+  } catch (e) {
+    console.warn('Konnte keine frischen Daten laden, nutze lokalen Cache.', e);
+    DATA = loadCache();
+  }
+
+  if (DATA.people.length === 0) {
     showOnboarding();
   } else {
     showMainApp();
   }
-  registerServiceWorker();
+
+  subscribeRealtime(async () => {
+    try {
+      DATA = await fetchAll();
+      saveCache(DATA);
+      if (!isSheetOpen()) refreshCurrentView();
+    } catch (e) { /* Verbindung gerade nicht da, Cache bleibt gültig */ }
+  });
+
+  flushQueue();
+}
+
+function showSetupNeeded() {
+  hideAllScreens();
+  $('#setupNeeded').classList.remove('hidden');
+}
+
+function showLoading() {
+  hideAllScreens();
+  $('#loading').classList.remove('hidden');
+}
+
+function showLogin() {
+  hideAllScreens();
+  $('#login').classList.remove('hidden');
+  $('#loginForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const errEl = $('#loginError');
+    errEl.classList.add('hidden');
+    const submitBtn = e.target.querySelector('button[type=submit]');
+    submitBtn.disabled = true;
+    try {
+      const session = await signIn(fd.get('email'), fd.get('password'));
+      currentUserEmail = session.user.email || '';
+      await afterLogin();
+    } catch (err) {
+      errEl.textContent = 'Anmeldung fehlgeschlagen: ' + (err.message || 'Bitte Zugangsdaten prüfen.');
+      errEl.classList.remove('hidden');
+    } finally {
+      submitBtn.disabled = false;
+    }
+  };
 }
 
 function showOnboarding() {
+  hideAllScreens();
   $('#onboarding').classList.remove('hidden');
-  $('#mainApp').classList.add('hidden');
-  $('#onboardForm').addEventListener('submit', onOnboardSubmit);
+  $('#onboardForm').onsubmit = onOnboardSubmit;
 }
 
-function onOnboardSubmit(e) {
+async function onOnboardSubmit(e) {
   e.preventDefault();
   const fd = new FormData(e.target);
   const form = Object.fromEntries(fd.entries());
   const seed = fd.get('seed') === 'on';
-  DATA = completeOnboarding(loadData(), form, seed);
+  const submitBtn = e.target.querySelector('button[type=submit]');
+  submitBtn.disabled = true;
+  await completeOnboarding(DATA, form, seed);
   showMainApp();
 }
 
 function showMainApp() {
-  $('#onboarding').classList.add('hidden');
+  hideAllScreens();
   $('#mainApp').classList.remove('hidden');
   setupNav();
   navigate('dashboard');
@@ -275,10 +385,10 @@ function openTripSheet(tripId) {
   if (editing) {
     $('#deleteTripBtn').addEventListener('click', () => {
       DATA.trips = DATA.trips.filter(t => t.id !== tripId);
-      saveData(DATA);
       closeSheet();
       refreshCurrentView();
       showToast('Fahrt gelöscht');
+      persistChange({ table: 'trips', type: 'delete', payload: { id: tripId } });
     });
   }
 
@@ -287,18 +397,21 @@ function openTripSheet(tripId) {
     const fd = new FormData(e.target);
     const date = fd.get('date') || todayIso();
     const note = (fd.get('note') || '').trim();
+    let tripPayload;
 
     if (editing) {
       trip.personId = selected;
       trip.date = date;
       trip.note = note;
+      tripPayload = trip;
     } else {
-      DATA.trips.push({ id: uid(), personId: selected, date, note });
+      tripPayload = { id: uid(), personId: selected, date, note };
+      DATA.trips.push(tripPayload);
     }
-    saveData(DATA);
     closeSheet();
     refreshCurrentView();
     showToast(editing ? 'Fahrt aktualisiert' : 'Fahrt hinzugefügt');
+    persistChange({ table: 'trips', type: 'upsert', payload: tripPayload });
   });
 }
 
@@ -377,10 +490,10 @@ function openCarEditSheet(personId) {
     person.car.model = (fd.get('model') || '').trim() || person.car.model;
     person.car.year = fd.get('year') ? Number(fd.get('year')) : null;
     person.car.color = fd.get('color') || person.car.color;
-    saveData(DATA);
     closeSheet();
     refreshCurrentView();
     showToast('Auto aktualisiert');
+    persistChange({ table: 'people', type: 'upsert', payload: person });
   });
 }
 
@@ -442,6 +555,17 @@ function renderSettings() {
     `).join('')}
     <button class="btn-secondary" id="addPersonBtn">+ Person hinzufügen</button>
 
+    <div class="section-title">Konto</div>
+    <div class="settings-card">
+      <div class="settings-row">
+        <span>Angemeldet als ${escapeHtml(currentUserEmail)}</span>
+      </div>
+      <div class="settings-row">
+        <span class="danger-zone">Abmelden</span>
+        <button class="danger-zone" id="signOutBtn">Abmelden</button>
+      </div>
+    </div>
+
     <div class="section-title">Daten</div>
     <div class="settings-card">
       <div class="settings-row">
@@ -472,20 +596,37 @@ function renderSettings() {
 
   $('#addPersonBtn', root).addEventListener('click', openAddPersonSheet);
 
+  $('#signOutBtn', root).addEventListener('click', async () => {
+    await signOut();
+    currentUserEmail = '';
+    DATA = { people: [], trips: [] };
+    showLogin();
+  });
+
   $('#resetTripsBtn', root).addEventListener('click', () => {
     if (confirm('Wirklich alle Fahrten löschen? Dies kann nicht rückgängig gemacht werden.')) {
+      const tripsToDelete = [...DATA.trips];
       DATA.trips = [];
-      saveData(DATA);
+      saveCache(DATA);
       refreshCurrentView();
       showToast('Alle Fahrten gelöscht');
+      tripsToDelete.forEach(t => persistChange({ table: 'trips', type: 'delete', payload: { id: t.id } }));
     }
   });
 
-  $('#resetAllBtn', root).addEventListener('click', () => {
-    if (confirm('App wirklich komplett zurücksetzen? Alle Daten gehen verloren.')) {
-      localStorage.removeItem(DB_KEY);
-      location.reload();
+  $('#resetAllBtn', root).addEventListener('click', async () => {
+    if (!confirm('App wirklich komplett zurücksetzen? Alle Daten gehen für BEIDE Geräte verloren.')) return;
+    if (!navigator.onLine) {
+      alert('Für einen kompletten Reset wird eine Internetverbindung benötigt.');
+      return;
     }
+    showToast('Setze zurück…');
+    for (const p of [...DATA.people]) {
+      await runOp({ table: 'people', type: 'delete', payload: { id: p.id } });
+    }
+    localStorage.removeItem(CACHE_KEY);
+    localStorage.removeItem(QUEUE_KEY);
+    location.reload();
   });
 }
 
@@ -564,10 +705,10 @@ function openRenameSheet(personId) {
     const fd = new FormData(e.target);
     const name = (fd.get('name') || '').trim();
     if (name) person.name = name;
-    saveData(DATA);
     closeSheet();
     refreshCurrentView();
     showToast('Name aktualisiert');
+    persistChange({ table: 'people', type: 'upsert', payload: person });
   });
 }
 
