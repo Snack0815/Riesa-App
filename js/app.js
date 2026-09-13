@@ -6,21 +6,27 @@ const $ = (sel, root) => (root || document).querySelector(sel);
 const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 
 function getPerson(id) { return DATA.people.find(p => p.id === id); }
-function otherPerson(id) { return DATA.people.find(p => p.id !== id); }
 
 function tripCount(personId) {
   return DATA.trips.filter(t => t.personId === personId).length;
 }
 
+function hexToRgba(hex, alpha) {
+  const c = (hex || '#7a8091').replace('#', '');
+  const num = parseInt(c, 16);
+  const r = (num >> 16) & 0xff, g = (num >> 8) & 0xff, b = num & 0xff;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/* Fairness für beliebig viele Personen: wer die wenigsten Fahrten hat, ist als Nächstes dran */
 function fairness() {
-  const [p1, p2] = DATA.people;
-  const c1 = tripCount(p1.id);
-  const c2 = tripCount(p2.id);
-  const diff = c1 - c2;
-  let behind = null;
-  if (diff > 0) behind = p2;
-  else if (diff < 0) behind = p1;
-  return { p1, p2, c1, c2, diff: Math.abs(diff), behind };
+  const counts = DATA.people.map(p => ({ person: p, count: tripCount(p.id) }));
+  const maxCount = counts.length ? Math.max(...counts.map(c => c.count)) : 0;
+  const minCount = counts.length ? Math.min(...counts.map(c => c.count)) : 0;
+  const balanced = counts.length > 1 && maxCount === minCount;
+  const behind = counts.filter(c => c.count === minCount).map(c => c.person);
+  const sorted = [...counts].sort((a, b) => a.count - b.count);
+  return { counts, sorted, maxCount, minCount, diff: maxCount - minCount, balanced, behind };
 }
 
 function formatDate(iso) {
@@ -108,38 +114,33 @@ function showToast(msg) {
 function renderDashboard() {
   const f = fairness();
   const root = $('#view-dashboard');
-  const total = f.c1 + f.c2;
-  const pct1 = total ? Math.round((f.c1 / total) * 100) : 50;
-  const pct2 = 100 - pct1;
 
   let statusHtml;
   let nextHtml = '';
-  if (f.diff === 0) {
+  if (f.counts.length < 2) {
+    statusHtml = `<div class="fairness-status">Füge eine weitere Person hinzu, um die Fairness zu berechnen.</div>`;
+  } else if (f.balanced) {
     statusHtml = `<div class="fairness-status balanced">Perfekt ausgeglichen ⚖️</div>`;
   } else {
+    const names = f.behind.map(p => `<b>${escapeHtml(p.name)}</b>`).join(' &amp; ');
+    const verb = f.behind.length > 1 ? 'sollten' : 'sollte';
     const tripWord = f.diff === 1 ? 'Fahrt' : 'Fahrten';
-    statusHtml = `<div class="fairness-status"><b>${escapeHtml(f.behind.name)}</b> sollte die nächsten <b>${f.diff}</b> ${tripWord} übernehmen.</div>`;
-    nextHtml = `<div class="fairness-next">Nächste Fahrt: <b>→ ${escapeHtml(f.behind.name)}</b></div>`;
+    statusHtml = `<div class="fairness-status">${names} ${verb} die nächsten <b>${f.diff}</b> ${tripWord} übernehmen.</div>`;
+    nextHtml = `<div class="fairness-next">Nächste Fahrt: <b>→ ${f.behind.map(p => escapeHtml(p.name)).join(' / ')}</b></div>`;
   }
 
   root.innerHTML = `
     <div class="fairness-card">
       <div class="fairness-label">⚖️ Fairness</div>
-      <div class="fairness-rows">
-        <div class="fairness-person">
-          <div class="fairness-dot" style="background:var(--p1)"></div>
-          <div class="fairness-name">${escapeHtml(f.p1.name)}</div>
-          <div class="fairness-count">${f.c1} <span>Fahrten</span></div>
-        </div>
-        <div class="fairness-person">
-          <div class="fairness-dot" style="background:var(--p2)"></div>
-          <div class="fairness-name">${escapeHtml(f.p2.name)}</div>
-          <div class="fairness-count">${f.c2} <span>Fahrten</span></div>
-        </div>
-      </div>
-      <div class="fairness-bar">
-        <div style="width:${pct1}%; background:var(--p1)"></div>
-        <div style="width:${pct2}%; background:var(--p2)"></div>
+      <div class="fairness-list">
+        ${f.sorted.map(c => `
+          <div class="fairness-row">
+            <span class="fairness-row-dot" style="background:${c.person.accentColor}"></span>
+            <span class="fairness-row-name">${escapeHtml(c.person.name)}</span>
+            <div class="fairness-row-track"><div class="fairness-row-fill" style="width:${f.maxCount ? (c.count / f.maxCount) * 100 : 0}%; background:${c.person.accentColor}"></div></div>
+            <span class="fairness-row-count">${c.count}</span>
+          </div>
+        `).join('')}
       </div>
       ${statusHtml}
       ${nextHtml}
@@ -161,13 +162,12 @@ function renderDashboard() {
 }
 
 function carMiniCard(person) {
-  const tag = person.id === 'p1' ? 'tag-p1' : 'tag-p2';
   return `
     <div class="carmini-card" data-person="${person.id}">
       ${carSvg(person.car)}
       <div class="carmini-title">${escapeHtml(person.car.brand)} ${escapeHtml(person.car.model)}</div>
       <div class="carmini-sub">${escapeHtml(person.name)}</div>
-      <div class="carmini-count ${tag}">${tripCount(person.id)} Fahrten</div>
+      <div class="carmini-count" style="background:${hexToRgba(person.accentColor, 0.15)}; color:${person.accentColor}">${tripCount(person.id)} Fahrten</div>
     </div>
   `;
 }
@@ -200,13 +200,12 @@ function renderTrips() {
 function tripItemHtml(trip) {
   const person = getPerson(trip.personId);
   if (!person) return '';
-  const dotVar = person.id === 'p1' ? 'var(--p1)' : 'var(--p2)';
   return `
     <div class="trip-item" data-id="${trip.id}">
       <div class="trip-car-icon">${carSvg(person.car)}</div>
       <div class="trip-info">
         <div class="trip-date">${formatDate(trip.date)}</div>
-        <div class="trip-person"><span class="trip-dot" style="background:${dotVar}"></span>${escapeHtml(person.name)}</div>
+        <div class="trip-person"><span class="trip-dot" style="background:${person.accentColor}"></span>${escapeHtml(person.name)}</div>
         ${trip.note ? `<div class="trip-note">${escapeHtml(trip.note)}</div>` : ''}
       </div>
       <div class="trip-chevron">›</div>
@@ -228,8 +227,8 @@ function openTripSheet(tripId) {
           <label>Wer ist gefahren?</label>
           <div class="choice-group" id="personChoice">
             ${DATA.people.map(p => `
-              <div class="choice-btn ${p.id === selectedPersonId ? 'selected' : ''}" data-person="${p.id}">
-                <div class="choice-dot" style="background:${p.id === 'p1' ? 'var(--p1)' : 'var(--p2)'}; margin:0 auto 8px;"></div>
+              <div class="choice-btn ${p.id === selectedPersonId ? 'selected' : ''}" data-person="${p.id}" data-color="${p.accentColor}">
+                <div class="choice-dot" style="background:${p.accentColor}; margin:0 auto 8px;"></div>
                 <div class="choice-label">${escapeHtml(p.name)}</div>
               </div>
             `).join('')}
@@ -253,10 +252,19 @@ function openTripSheet(tripId) {
   $('#sheetRoot').innerHTML = html;
 
   let selected = selectedPersonId;
+  function applyChoiceStyles() {
+    $$('.choice-btn').forEach(b => {
+      const isSel = b.dataset.person === selected;
+      b.classList.toggle('selected', isSel);
+      b.style.borderColor = isSel ? b.dataset.color : '';
+      b.style.background = isSel ? hexToRgba(b.dataset.color, 0.1) : '';
+    });
+  }
+  applyChoiceStyles();
   $$('.choice-btn', document).forEach(btn => {
     btn.addEventListener('click', () => {
       selected = btn.dataset.person;
-      $$('.choice-btn').forEach(b => b.classList.toggle('selected', b === btn));
+      applyChoiceStyles();
     });
   });
 
@@ -310,7 +318,6 @@ function renderCars() {
 }
 
 function carBigCardHtml(person) {
-  const tag = person.id === 'p1' ? 'tag-p1' : 'tag-p2';
   const yearPart = person.car.year ? ` · ${person.car.year}` : '';
   const colorPart = person.car.color ? ` · ${escapeHtml(person.car.color)}` : '';
   return `
@@ -318,7 +325,7 @@ function carBigCardHtml(person) {
       ${carSvg(person.car)}
       <div class="car-big-title">${escapeHtml(person.car.brand)} ${escapeHtml(person.car.model)}</div>
       <div class="car-big-sub">${escapeHtml(person.name)}${yearPart}${colorPart}</div>
-      <div class="car-big-count ${tag}">🚗 ${tripCount(person.id)} Riesa-Fahrten</div>
+      <div class="car-big-count" style="background:${hexToRgba(person.accentColor, 0.15)}; color:${person.accentColor}">🚗 ${tripCount(person.id)} Riesa-Fahrten</div>
       <div class="car-big-actions">
         <button class="btn-secondary" id="editCarBtn-${person.id}">Auto bearbeiten</button>
       </div>
@@ -382,54 +389,58 @@ function openCarEditSheet(personId) {
 function renderSettings() {
   const root = $('#view-settings');
   const total = DATA.trips.length;
-  const c1 = tripCount(DATA.people[0].id);
-  const c2 = tripCount(DATA.people[1].id);
-  const diff = Math.abs(c1 - c2);
-  const ratio = c2 === 0 ? (c1 === 0 ? '0:0' : `${c1}:0`) : `${(c1 / c2).toFixed(2)} : 1`;
-  const maxCount = Math.max(c1, c2, 1);
+  const counts = DATA.people.map(p => ({ person: p, count: tripCount(p.id) }));
+  const maxCount = counts.length ? Math.max(...counts.map(c => c.count)) : 0;
+  const minCount = counts.length ? Math.min(...counts.map(c => c.count)) : 0;
+  const range = maxCount - minCount;
 
   root.innerHTML = `
     <div class="section-title">Statistik</div>
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-value">${total}</div><div class="stat-label">Fahrten gesamt</div></div>
-      <div class="stat-card"><div class="stat-value">${diff}</div><div class="stat-label">Differenz</div></div>
-      <div class="stat-card"><div class="stat-value">${c1}</div><div class="stat-label">${escapeHtml(DATA.people[0].name)}</div></div>
-      <div class="stat-card"><div class="stat-value">${c2}</div><div class="stat-label">${escapeHtml(DATA.people[1].name)}</div></div>
+      <div class="stat-card"><div class="stat-value">${range}</div><div class="stat-label">Größte Differenz</div></div>
+      ${counts.map(c => `
+        <div class="stat-card">
+          <div class="stat-value">${c.count}</div>
+          <div class="stat-label">${escapeHtml(c.person.name)}</div>
+        </div>
+      `).join('')}
       <div class="stat-card full">
-        <div class="stat-label" style="margin-bottom:10px;">Verhältnis: ${ratio}</div>
+        <div class="stat-label" style="margin-bottom:10px;">Verteilung</div>
         <div class="bars">
-          <div class="bar-row">
-            <div class="bar-row-label">${escapeHtml(DATA.people[0].name)}</div>
-            <div class="bar-track"><div class="bar-fill" style="width:${(c1/maxCount)*100}%; background:var(--p1)"></div></div>
-            <div class="bar-row-value">${c1}</div>
-          </div>
-          <div class="bar-row">
-            <div class="bar-row-label">${escapeHtml(DATA.people[1].name)}</div>
-            <div class="bar-track"><div class="bar-fill" style="width:${(c2/maxCount)*100}%; background:var(--p2)"></div></div>
-            <div class="bar-row-value">${c2}</div>
-          </div>
+          ${counts.map(c => `
+            <div class="bar-row">
+              <div class="bar-row-label">${escapeHtml(c.person.name)}</div>
+              <div class="bar-track"><div class="bar-fill" style="width:${maxCount ? (c.count / maxCount) * 100 : 0}%; background:${c.person.accentColor}"></div></div>
+              <div class="bar-row-value">${c.count}</div>
+            </div>
+          `).join('')}
         </div>
       </div>
-      <div class="stat-card">
-        <div class="stat-value">${c1}</div>
-        <div class="stat-label">${escapeHtml(DATA.people[0].car.brand)} ${escapeHtml(DATA.people[0].car.model)}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">${c2}</div>
-        <div class="stat-label">${escapeHtml(DATA.people[1].car.brand)} ${escapeHtml(DATA.people[1].car.model)}</div>
-      </div>
+      ${counts.map(c => `
+        <div class="stat-card">
+          <div class="stat-value">${c.count}</div>
+          <div class="stat-label">${escapeHtml(c.person.car.brand)} ${escapeHtml(c.person.car.model)}</div>
+        </div>
+      `).join('')}
     </div>
 
-    <div class="section-title">Personen &amp; Namen</div>
+    <div class="section-title">Personen</div>
     ${DATA.people.map(p => `
       <div class="settings-card">
-        <h3>${escapeHtml(p.name)}</h3>
+        <h3><span class="settings-dot" style="background:${p.accentColor}"></span>${escapeHtml(p.name)}</h3>
         <div class="settings-row">
           <span>Name ändern</span>
           <button data-editname="${p.id}">Bearbeiten</button>
         </div>
+        ${DATA.people.length > 1 ? `
+        <div class="settings-row">
+          <span class="danger-zone">Person entfernen</span>
+          <button class="danger-zone" data-removeperson="${p.id}">Entfernen</button>
+        </div>` : ''}
       </div>
     `).join('')}
+    <button class="btn-secondary" id="addPersonBtn">+ Person hinzufügen</button>
 
     <div class="section-title">Daten</div>
     <div class="settings-card">
@@ -448,6 +459,19 @@ function renderSettings() {
     btn.addEventListener('click', () => openRenameSheet(btn.dataset.editname));
   });
 
+  $$('[data-removeperson]', root).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const person = getPerson(btn.dataset.removeperson);
+      if (confirm(`"${person.name}" wirklich entfernen? Alle Fahrten dieser Person werden ebenfalls gelöscht.`)) {
+        removePerson(DATA, person.id);
+        refreshCurrentView();
+        showToast('Person entfernt');
+      }
+    });
+  });
+
+  $('#addPersonBtn', root).addEventListener('click', openAddPersonSheet);
+
   $('#resetTripsBtn', root).addEventListener('click', () => {
     if (confirm('Wirklich alle Fahrten löschen? Dies kann nicht rückgängig gemacht werden.')) {
       DATA.trips = [];
@@ -462,6 +486,56 @@ function renderSettings() {
       localStorage.removeItem(DB_KEY);
       location.reload();
     }
+  });
+}
+
+function openAddPersonSheet() {
+  const html = `
+    <div class="sheet-backdrop" id="sheetBackdrop">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <h2>Person hinzufügen</h2>
+        <form id="addPersonForm">
+          <label>Name
+            <input type="text" name="name" placeholder="z.B. Person 3" required maxlength="20">
+          </label>
+          <div class="grid-2">
+            <label>Marke
+              <input type="text" name="brand" placeholder="z.B. Skoda" required maxlength="20">
+            </label>
+            <label>Modell
+              <input type="text" name="model" placeholder="z.B. Octavia" required maxlength="20">
+            </label>
+          </div>
+          <div class="grid-2">
+            <label>Baujahr <span class="opt">optional</span>
+              <input type="number" name="year" min="1970" max="2030">
+            </label>
+            <label>Farbe <span class="opt">optional</span>
+              <select name="color">
+                ${['Schwarz','Weiß','Silber','Grau','Blau','Dunkelblau','Rot','Grün','Gelb','Orange','Braun','Beige','Violett','Türkis']
+                  .map(c => `<option>${c}</option>`).join('')}
+              </select>
+            </label>
+          </div>
+          <div class="sheet-actions">
+            <button type="submit" class="btn-primary">Hinzufügen</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  $('#sheetRoot').innerHTML = html;
+  $('#sheetBackdrop').addEventListener('click', (e) => { if (e.target.id === 'sheetBackdrop') closeSheet(); });
+
+  $('#addPersonForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const form = Object.fromEntries(fd.entries());
+    addPerson(DATA, form);
+    closeSheet();
+    refreshCurrentView();
+    showToast('Person hinzugefügt');
   });
 }
 
